@@ -6,7 +6,7 @@ import qrcode
 
 ROOT = Path(__file__).parent
 TEMPLATE_DIR = ROOT / "template"
-DIST_DIR = ROOT / "dist"
+DIST_DIR = ROOT / "docs"
 CSV_FILE = ROOT / "clients.csv"
 
 env = Environment(loader=FileSystemLoader(TEMPLATE_DIR), autoescape=select_autoescape(["html", "xml"]))
@@ -17,14 +17,33 @@ def slugify(s: str) -> str:
     s = unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode()
     return re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-")
 
-def parse_bullets(text: str):
-    """Rozdziela bullety po ' | ' lub nowej linii."""
-    if not text: return []
-    # najpierw po ' | ', jeśli nie ma – po nowej linii
-    parts = [p.strip() for p in text.split(" | ") if p.strip()]
-    if len(parts) == 1 and "\n" in text:
-        parts = [p.strip() for p in text.split("\n") if p.strip()]
-    return parts
+def parse_experience(text: str):
+    if not text:
+        return []
+    lines = [l.strip() for l in text.strip().split('\n') if l.strip()]
+    filtered = []
+    for l in lines:
+        if l.startswith('---') or l.startswith('Linia') or l.startswith('PRZYKŁAD') or l.startswith('WPISZ'):
+            continue
+        filtered.append(l)
+    exp = []
+    for i in range(0, len(filtered), 4):
+        chunk = filtered[i:i+4]
+        if len(chunk) < 3:
+            continue
+        company = chunk[0]
+        role = chunk[1]
+        period = chunk[2]
+        bullets = []
+        if len(chunk) >= 4 and chunk[3]:
+            bullets = [b.strip() for b in chunk[3].split(';') if b.strip()]
+        exp.append({
+            "company": company,
+            "role": role,
+            "period": period,
+            "bullets": bullets,
+        })
+    return exp
 
 def build_client(row: dict):
     name = f"{row.get('Imię','').strip()} {row.get('Nazwisko','').strip()}".strip()
@@ -33,23 +52,12 @@ def build_client(row: dict):
     client_dir = DIST_DIR / slug
     client_dir.mkdir(parents=True, exist_ok=True)
 
-    site_url = f"https://twojanazwa.github.io/cv-wizytowki/{slug}/"
+    site_url = f"https://starzyckipatryk-cpu.github.io/cv-wizytowki-generator/{slug}/"
     qr = qrcode.make(site_url, box_size=6, border=2)
     qr.save(client_dir / "qr.png")
 
-    skills = [s.strip() for s in row.get("Umiejętności", "").split(",") if s.strip()]
-
-    exp = []
-    for i in range(1, 6):
-        company = row.get(f"Doświadczenie {i} (nazwa firmy)", "").strip()
-        if not company: continue
-        bullets = parse_bullets(row.get(f"Doświadczenie {i} (bullety)", ""))
-        exp.append({
-            "company": company,
-            "role": row.get(f"Doświadczenie {i} (stanowisko)", "").strip(),
-            "period": row.get(f"Doświadczenie {i} (okres)", "").strip(),
-            "bullets": bullets,
-        })
+    skills = [s.strip() for s in row.get("Umiejętności (lista przecinkami)", "").split(",") if s.strip()]
+    exp = parse_experience(row.get("Doświadczenie zawodowe (wpisuj linię po linii)", ""))
 
     portfolio = []
     for i in range(1, 4):
@@ -68,8 +76,8 @@ def build_client(row: dict):
         "industry": row.get("Branża", "").strip(),
         "linkedin": row.get("Link do LinkedIn", "").strip(),
         "email": row.get("Email kontaktowy", "").strip(),
-        "phone": row.get("Telefon", "").strip(),
-        "about": row.get("O mnie", "").strip(),
+        "phone": row.get("Telefon (opcjonalnie)", "").strip(),
+        "about": row.get("O mnie (3-5 zdań)", "").strip(),
         "skills": skills,
         "experience": exp,
         "portfolio": portfolio,
